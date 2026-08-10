@@ -48,7 +48,7 @@ Navigate to:
 ### 2. WiFi Provisioning
 
 The project supports secure WiFi provisioning without hardcoding credentials:
-1. **Initial Boot**: If no credentials are saved (or connection fails), the device starts in **Access Point (AP) Mode** on Channel 11.
+1. **Initial Boot**: If no credentials are saved (or connection fails), the device starts in **Access Point (AP) Mode** on Channel 1.
 2. **Connect to AP**: Connect your phone/computer to the WiFi network `LED-Driver-XXXXXX` (Password: `password123`).
 3. **Configure**: Open `http://192.168.4.1/` in your browser.
 4. **Save**: Enter your WiFi SSID and Password in the dashboard and click **Save & Restart**.
