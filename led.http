@@ -1,0 +1,20 @@
+### GET gpio
+GET http://192.168.20.182/api/led_info
+
+### GET brightness
+GET http://192.168.20.182/api/brightness
+
+### Set brightness
+POST http://192.168.20.182/api/brightness?value=20
+Accept: application/json
+
+### GET power status
+GET http://192.168.20.182/api/power
+
+### Turn LED OFF
+POST http://192.168.20.182/api/power?value=off
+Accept: application/json
+
+### Turn LED ON
+POST http://192.168.20.182/api/power?value=on
+Accept: application/json

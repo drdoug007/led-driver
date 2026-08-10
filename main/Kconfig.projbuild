@@ -1,0 +1,69 @@
+menu "Example Connection Configuration"
+
+    config ESP_WIFI_SSID
+        string "WiFi SSID"
+        default "myssid"
+        help
+            SSID of the WiFi network to connect to.
+
+    config ESP_WIFI_PASSWORD
+        string "WiFi Password"
+        default "mypassword"
+        help
+            Password of the WiFi network to connect to.
+
+    config ESP_MAXIMUM_RETRY
+        int "Maximum retry"
+        default 5
+        help
+            Maximum number of retries to connect to the WiFi network.
+
+endmenu
+
+menu "LED Configuration"
+
+    config LEDC_GPIO
+        int "LED GPIO Pin"
+        default 2
+        help
+            GPIO pin number for the LED output (D2 is typically GPIO 2).
+
+    choice LEDC_OUTPUT_MODE
+        prompt "GPIO Output Mode"
+        default LEDC_OUTPUT_MODE_PP
+        help
+            Choose between Push-Pull and Open-Drain mode.
+            Push-Pull is standard for 3.3V LEDs.
+            Open-Drain requires an external pull-up resistor (e.g. for 5V/12V).
+
+        config LEDC_OUTPUT_MODE_PP
+            bool "Push-Pull"
+        config LEDC_OUTPUT_MODE_OD
+            bool "Open-Drain"
+    endchoice
+
+    config LEDC_DRIVE_STRENGTH
+        int "GPIO Drive Strength (0-3)"
+        range 0 3
+        default 3
+        help
+            Set the drive strength of the GPIO pin.
+            0: ~5mA, 1: ~10mA, 2: ~20mA, 3: ~40mA.
+            Higher drive strength can help sharpen edges (reduce ramping).
+
+    config LEDC_PWM_FREQ
+        int "PWM Frequency (Hz)"
+        default 5000
+        help
+            Frequency of the PWM signal in Hz.
+            5000 Hz (5 kHz) is recommended for COB strips.
+
+    config LEDC_PWM_RES
+        int "PWM Resolution (bits)"
+        range 1 20
+        default 13
+        help
+            Bit depth of the PWM resolution.
+            13 bits gives 8192 steps of dimming resolution.
+
+endmenu
