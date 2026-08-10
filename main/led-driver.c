@@ -544,6 +544,7 @@ void wifi_init_softap(void)
 
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+    esp_wifi_set_storage(WIFI_STORAGE_RAM);
 
     ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT,
                                                         ESP_EVENT_ANY_ID,
@@ -558,27 +559,33 @@ void wifi_init_softap(void)
 
     wifi_config_t wifi_config = {
         .ap = {
-            .channel = 6,
+            .channel = 1,
             .password = "",
             .max_connection = 4,
             .authmode = WIFI_AUTH_OPEN,
+            .ssid_hidden = 0,
+            .beacon_interval = 100,
             .pmf_cfg = {
                 .required = false,
             },
         },
     };
     strncpy((char*)wifi_config.ap.ssid, ap_ssid, sizeof(wifi_config.ap.ssid));
-    wifi_config.ap.ssid_len = 0; // Use null-termination
+    wifi_config.ap.ssid_len = strlen(ap_ssid);
 
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
+    
+    // Disable 802.11ax (Wi-Fi 6) BEFORE start to ensure compatibility
+    esp_wifi_set_protocol(WIFI_IF_AP, WIFI_PROTOCOL_11B | WIFI_PROTOCOL_11G | WIFI_PROTOCOL_11N);
+
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &wifi_config));
 
-    // Set country code to US for broad compatibility
+    // Set country code to US with manual policy for stable channel selection
     wifi_country_t country = {
         .cc = "US",
         .schan = 1,
         .nchan = 11,
-        .policy = WIFI_COUNTRY_POLICY_AUTO,
+        .policy = WIFI_COUNTRY_POLICY_MANUAL,
     };
     esp_wifi_set_country(&country);
 
@@ -586,7 +593,6 @@ void wifi_init_softap(void)
     ESP_ERROR_CHECK(esp_wifi_start());
 
     // Post-start configuration for better compatibility
-    esp_wifi_set_protocol(WIFI_IF_AP, WIFI_PROTOCOL_11B | WIFI_PROTOCOL_11G | WIFI_PROTOCOL_11N);
     esp_wifi_set_bandwidth(WIFI_IF_AP, WIFI_BW20);
     esp_wifi_set_ps(WIFI_PS_NONE);
 
