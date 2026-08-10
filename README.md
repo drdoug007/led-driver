@@ -11,6 +11,7 @@ This project is a high-performance LED driver for ESP-IDF (specifically targetin
     - Configurable GPIO pin (default D2/GPIO 2).
     - Adjustable GPIO drive strength (up to 40mA) to sharpen signal edges.
     - Support for both Push-Pull and Open-Drain output modes.
+    - **Signal Inversion**: Support for active-low drivers (e.g., NPN optocouplers) via hardware signal inversion.
 - **Startup Diagnostics**: Logs the "Real URL" of the device's API endpoints upon successful WiFi connection.
 
 ## Hardware Requirements
@@ -39,6 +40,7 @@ Navigate to:
     - **GPIO Drive Strength**: Adjust to reduce signal ramping.
     - **PWM Frequency (Hz)**: 5000 Hz is recommended for COB strips.
     - **PWM Resolution (bits)**: 13 bits provides high-precision dimming.
+    - **Invert PWM Logic**: Enable if using an active-low driver or optocoupler (e.g., HL-SAB-NPN-1).
 
 ### 2. Build and Flash
 

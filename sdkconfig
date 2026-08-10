@@ -1063,6 +1063,8 @@ CONFIG_LEDC_DRIVE_STRENGTH=3
 CONFIG_LEDC_PWM_FREQ=5000
 # default:
 CONFIG_LEDC_PWM_RES=13
+# default:
+# CONFIG_LEDC_INVERT_LOGIC is not set
 # end of LED Configuration
 
 #
