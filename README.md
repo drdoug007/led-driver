@@ -5,7 +5,8 @@ This project is a high-performance LED driver for ESP-IDF (specifically targetin
 ## Features
 
 - **REST API Control**: Simple HTTP interface to adjust brightness and toggle power.
-- **Web UI**: Modern browser interface to control the LED visually.
+- **Web UI**: Modern browser interface to control the LED visually (includes custom favicon).
+- **Security**: WiFi passwords are masked in system logs to protect credentials.
 - **Granular PWM**: Configurable frequency (default 5 kHz) and resolution (up to 13-bit / 8,192 steps) for smooth, flicker-free dimming.
 - **WiFi Connectivity**: Station mode support with automatic reconnection logic.
 - **Flexible Hardware Configuration**:

@@ -1,3 +1,3 @@
 idf_component_register(SRCS "led-driver.c"
                     INCLUDE_DIRS "."
-                    EMBED_FILES "index.html")
+                    EMBED_FILES "index.html" "favicon.ico")

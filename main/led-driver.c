@@ -110,11 +110,20 @@ void set_led_intensity(int percent) {
 
 extern const uint8_t index_html_start[] asm("_binary_index_html_start");
 extern const uint8_t index_html_end[]   asm("_binary_index_html_end");
+extern const uint8_t favicon_ico_start[] asm("_binary_favicon_ico_start");
+extern const uint8_t favicon_ico_end[]   asm("_binary_favicon_ico_end");
 
 // URI Handler: GET / (Serve Web Page)
 esp_err_t root_get_handler(httpd_req_t *req) {
     httpd_resp_set_type(req, "text/html");
     httpd_resp_send(req, (const char *)index_html_start, index_html_end - index_html_start);
+    return ESP_OK;
+}
+
+// URI Handler: GET /favicon.ico (Serve Icon)
+esp_err_t favicon_get_handler(httpd_req_t *req) {
+    httpd_resp_set_type(req, "image/x-icon");
+    httpd_resp_send(req, (const char *)favicon_ico_start, favicon_ico_end - favicon_ico_start);
     return ESP_OK;
 }
 
@@ -250,6 +259,14 @@ httpd_handle_t start_webserver(void) {
         };
         httpd_register_uri_handler(server, &root_uri);
 
+        httpd_uri_t favicon_uri = {
+            .uri       = "/favicon.ico",
+            .method    = HTTP_GET,
+            .handler   = favicon_get_handler,
+            .user_ctx  = NULL
+        };
+        httpd_register_uri_handler(server, &favicon_uri);
+
         ESP_LOGI(TAG, "Web server started and URI registered");
     } else {
         ESP_LOGE(TAG, "Failed to start web server");
@@ -343,11 +360,11 @@ void wifi_init_sta(void)
     /* xEventGroupWaitBits() returns the bits before the call returned, hence we can test which event actually
      * happened. */
     if (bits & WIFI_CONNECTED_BIT) {
-        ESP_LOGI(TAG, "connected to ap SSID:%s password:%s",
-                 CONFIG_ESP_WIFI_SSID, CONFIG_ESP_WIFI_PASSWORD);
+        ESP_LOGI(TAG, "connected to ap SSID:%s password:******",
+                 CONFIG_ESP_WIFI_SSID);
     } else if (bits & WIFI_FAIL_BIT) {
-        ESP_LOGI(TAG, "Failed to connect to SSID:%s, password:%s",
-                 CONFIG_ESP_WIFI_SSID, CONFIG_ESP_WIFI_PASSWORD);
+        ESP_LOGI(TAG, "Failed to connect to SSID:%s, password:******",
+                 CONFIG_ESP_WIFI_SSID);
     } else {
         ESP_LOGE(TAG, "UNEXPECTED EVENT");
     }
