@@ -12,6 +12,9 @@
 #include "esp_event.h"
 #include "esp_wifi.h"
 #include "esp_mac.h"
+#include "esp_netif_net_stack.h"
+#include "lwip/inet.h"
+#include "lwip/lwip_napt.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/event_groups.h"
@@ -445,6 +448,10 @@ static void event_handler(void* arg, esp_event_base_t event_base,
         ESP_LOGI(TAG, "Web UI available at: http://" IPSTR "/", IP2STR(&event->ip_info.ip));
         s_retry_num = 0;
         xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
+    } else if (event_base == IP_EVENT && event_id == IP_EVENT_ASSIGNED_IP_TO_CLIENT) {
+        const ip_event_assigned_ip_to_client_t *e = (const ip_event_assigned_ip_to_client_t *)event_data;
+        ESP_LOGI(TAG, "Assigned IP to client: " IPSTR ", MAC=" MACSTR ", hostname='%s'",
+                 IP2STR(&e->ip), MAC2STR(e->mac), e->hostname);
     }
 }
 
@@ -471,28 +478,20 @@ void wifi_init(void)
                                                         NULL,
                                                         NULL));
 
-    // Prepare SoftAP SSID
-    uint8_t mac[6];
-    esp_read_mac(mac, ESP_MAC_WIFI_SOFTAP);
-    char ap_ssid[32];
-    snprintf(ap_ssid, sizeof(ap_ssid), "LED-Driver-%02X%02X%02X", mac[3], mac[4], mac[5]);
-
     // SoftAP Config
     wifi_config_t ap_config = {
         .ap = {
+            .ssid = "myssid",
+            .ssid_len = strlen("myssid"),
             .channel = 1,
-            .password = "password123",
+            .password = "mypassword",
             .max_connection = 4,
             .authmode = WIFI_AUTH_WPA2_PSK,
-            .ssid_hidden = 0,
-            .beacon_interval = 100,
             .pmf_cfg = {
                 .required = false,
             },
         },
     };
-    strncpy((char*)ap_config.ap.ssid, ap_ssid, sizeof(ap_config.ap.ssid));
-    ap_config.ap.ssid_len = strlen(ap_ssid);
 
     // Station Config
     char sta_ssid[33] = {0};
@@ -505,43 +504,24 @@ void wifi_init(void)
     
     wifi_config_t sta_config = {
         .sta = {
+            .ssid = "",
+            .password = "",
+            .scan_method = WIFI_ALL_CHANNEL_SCAN,
+            .failure_retry_cnt = CONFIG_ESP_MAXIMUM_RETRY,
             .threshold.authmode = WIFI_AUTH_WPA2_PSK,
+            .sae_pwe_h2e = WPA3_SAE_PWE_BOTH,
         },
     };
     strncpy((char*)sta_config.sta.ssid, sta_ssid, sizeof(sta_config.sta.ssid));
     strncpy((char*)sta_config.sta.password, sta_password, sizeof(sta_config.sta.password));
 
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA));
-    
-    // Set country code to US with manual policy for stable channel selection
-    wifi_country_t country = {
-        .cc = "US",
-        .schan = 1,
-        .nchan = 11,
-        .policy = WIFI_COUNTRY_POLICY_MANUAL,
-    };
-    ESP_ERROR_CHECK(esp_wifi_set_country(&country));
-
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &ap_config));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &sta_config));
     
     ESP_ERROR_CHECK(esp_wifi_start());
-    
-    // Fallback the SoftAP interface to legacy 802.11b/g/n mode for full compatibility
-    // This MUST be called after esp_wifi_start() according to the checklist
-    ESP_ERROR_CHECK(esp_wifi_set_protocol(WIFI_IF_AP, WIFI_PROTOCOL_11B | WIFI_PROTOCOL_11G | WIFI_PROTOCOL_11N));
 
-    // Post-start compatibility tweaks
-    esp_wifi_set_bandwidth(WIFI_IF_AP, WIFI_BW20);
-    esp_wifi_set_ps(WIFI_PS_NONE);
-
-    ESP_LOGI(TAG, "WiFi started in APSTA mode.");
-    ESP_LOGI(TAG, "SoftAP SSID:%s Password:password123", ap_ssid);
-
-    esp_netif_ip_info_t ip_info;
-    esp_netif_get_ip_info(ap_netif, &ip_info);
-    ESP_LOGI(TAG, "SoftAP IP: " IPSTR, IP2STR(&ip_info.ip));
-    ESP_LOGI(TAG, "Connect to this WiFi and go to http://" IPSTR "/ to configure", IP2STR(&ip_info.ip));
+    ESP_LOGI(TAG, "WiFi started in APSTA mode. SSID:myssid Password:mypassword");
 
     /* Wait for connection */
     EventBits_t bits = xEventGroupWaitBits(s_wifi_event_group,
@@ -552,6 +532,10 @@ void wifi_init(void)
 
     if (bits & WIFI_CONNECTED_BIT) {
         ESP_LOGI(TAG, "Station connected to SSID:%s", sta_ssid);
+        esp_netif_set_default_netif(sta_netif);
+#if CONFIG_LWIP_IPV4_NAPT
+        esp_netif_napt_enable(ap_netif);
+#endif
     } else {
         ESP_LOGI(TAG, "Station failed to connect, staying in SoftAP mode for configuration.");
     }
