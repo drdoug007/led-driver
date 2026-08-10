@@ -558,7 +558,7 @@ void wifi_init_softap(void)
 
     wifi_config_t wifi_config = {
         .ap = {
-            .channel = 1,
+            .channel = 6,
             .password = "",
             .max_connection = 4,
             .authmode = WIFI_AUTH_OPEN,
@@ -568,16 +568,27 @@ void wifi_init_softap(void)
         },
     };
     strncpy((char*)wifi_config.ap.ssid, ap_ssid, sizeof(wifi_config.ap.ssid));
-    wifi_config.ap.ssid_len = strlen(ap_ssid);
+    wifi_config.ap.ssid_len = 0; // Use null-termination
 
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &wifi_config));
-    
-    // Disable 802.11ax (Wi-Fi 6) for SoftAP to ensure compatibility with all clients (e.g. older iPhones)
-    esp_wifi_set_protocol(WIFI_IF_AP, WIFI_PROTOCOL_11B | WIFI_PROTOCOL_11G | WIFI_PROTOCOL_11N);
+
+    // Set country code to US for broad compatibility
+    wifi_country_t country = {
+        .cc = "US",
+        .schan = 1,
+        .nchan = 11,
+        .policy = WIFI_COUNTRY_POLICY_AUTO,
+    };
+    esp_wifi_set_country(&country);
 
     vTaskDelay(pdMS_TO_TICKS(100)); // Give it a moment to settle
     ESP_ERROR_CHECK(esp_wifi_start());
+
+    // Post-start configuration for better compatibility
+    esp_wifi_set_protocol(WIFI_IF_AP, WIFI_PROTOCOL_11B | WIFI_PROTOCOL_11G | WIFI_PROTOCOL_11N);
+    esp_wifi_set_bandwidth(WIFI_IF_AP, WIFI_BW20);
+    esp_wifi_set_ps(WIFI_PS_NONE);
 
     ESP_LOGI(TAG, "wifi_init_softap finished. SSID:%s", ap_ssid);
     
