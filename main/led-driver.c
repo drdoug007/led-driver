@@ -108,6 +108,16 @@ void set_led_intensity(int percent) {
     update_led_hardware();
 }
 
+extern const uint8_t index_html_start[] asm("_binary_index_html_start");
+extern const uint8_t index_html_end[]   asm("_binary_index_html_end");
+
+// URI Handler: GET / (Serve Web Page)
+esp_err_t root_get_handler(httpd_req_t *req) {
+    httpd_resp_set_type(req, "text/html");
+    httpd_resp_send(req, (const char *)index_html_start, index_html_end - index_html_start);
+    return ESP_OK;
+}
+
 // REST Endpoint Handler: POST /api/brightness?value=0-100
 esp_err_t set_brightness_handler(httpd_req_t *req) {
     char buf[32];
@@ -232,6 +242,14 @@ httpd_handle_t start_webserver(void) {
         };
         httpd_register_uri_handler(server, &get_power_uri);
 
+        httpd_uri_t root_uri = {
+            .uri       = "/",
+            .method    = HTTP_GET,
+            .handler   = root_get_handler,
+            .user_ctx  = NULL
+        };
+        httpd_register_uri_handler(server, &root_uri);
+
         ESP_LOGI(TAG, "Web server started and URI registered");
     } else {
         ESP_LOGE(TAG, "Failed to start web server");
@@ -257,6 +275,7 @@ static void event_handler(void* arg, esp_event_base_t event_base,
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
         ESP_LOGI(TAG, "Successfully got IP: " IPSTR, IP2STR(&event->ip_info.ip));
+        ESP_LOGI(TAG, "Web UI available at: http://" IPSTR "/", IP2STR(&event->ip_info.ip));
         ESP_LOGI(TAG, "Real URL for changing brightness: POST http://" IPSTR "/api/brightness?value=50", 
                  IP2STR(&event->ip_info.ip));
         ESP_LOGI(TAG, "Real URL for getting brightness:  GET  http://" IPSTR "/api/brightness", 

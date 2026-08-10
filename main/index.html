@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESP32 LED Controller</title>
+    <style>
+        :root {
+            --primary-color: #007bff;
+            --bg-color: #f8f9fa;
+            --card-bg: #ffffff;
+            --text-color: #333;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+        .container {
+            background-color: var(--card-bg);
+            padding: 2rem;
+            border-radius: 15px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+            width: 100%;
+            max-width: 400px;
+            text-align: center;
+        }
+        h1 { margin-bottom: 2rem; font-weight: 300; }
+        .control-group { margin-bottom: 2rem; }
+        label { display: block; margin-bottom: 0.5rem; font-weight: 600; }
+        
+        /* Slider styling */
+        .slider {
+            -webkit-appearance: none;
+            width: 100%;
+            height: 10px;
+            border-radius: 5px;
+            background: #ddd;
+            outline: none;
+            margin: 1rem 0;
+        }
+        .slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 25px;
+            height: 25px;
+            border-radius: 50%;
+            background: var(--primary-color);
+            cursor: pointer;
+            box-shadow: 0 0 5px rgba(0,0,0,0.2);
+        }
+
+        /* Toggle styling */
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 60px;
+            height: 34px;
+        }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider-round {
+            position: absolute;
+            cursor: pointer;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 34px;
+        }
+        .slider-round:before {
+            position: absolute;
+            content: "";
+            height: 26px; width: 26px;
+            left: 4px; bottom: 4px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+        input:checked + .slider-round { background-color: var(--primary-color); }
+        input:checked + .slider-round:before { transform: translateX(26px); }
+
+        .status {
+            margin-top: 1rem;
+            font-size: 0.9rem;
+            color: #666;
+        }
+        .val-display { font-size: 1.5rem; font-weight: bold; color: var(--primary-color); }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>LED Control</h1>
+        
+        <div class="control-group">
+            <label>Power</label>
+            <label class="switch">
+                <input type="checkbox" id="power-toggle" checked>
+                <span class="slider-round"></span>
+            </label>
+        </div>
+
+        <div class="control-group">
+            <label>Brightness: <span id="brightness-val" class="val-display">50</span>%</label>
+            <input type="range" min="0" max="100" value="50" class="slider" id="brightness-slider">
+        </div>
+
+        <div class="status" id="status-text">Connecting...</div>
+    </div>
+
+    <script>
+        const powerToggle = document.getElementById('power-toggle');
+        const brightnessSlider = document.getElementById('brightness-slider');
+        const brightnessVal = document.getElementById('brightness-val');
+        const statusText = document.getElementById('status-text');
+
+        async function updateStatus() {
+            try {
+                const [bRes, pRes] = await Promise.all([
+                    fetch('/api/brightness'),
+                    fetch('/api/power')
+                ]);
+                const bData = await bRes.json();
+                const pData = await pRes.json();
+                
+                brightnessSlider.value = bData.brightness;
+                brightnessVal.textContent = bData.brightness;
+                powerToggle.checked = pData.power === 'on';
+                statusText.textContent = 'Connected';
+            } catch (err) {
+                statusText.textContent = 'Error syncing state';
+            }
+        }
+
+        powerToggle.onchange = async () => {
+            const val = powerToggle.checked ? 'on' : 'off';
+            try {
+                await fetch(`/api/power?value=${val}`, { method: 'POST' });
+                statusText.textContent = `Power: ${val}`;
+            } catch (err) {
+                statusText.textContent = 'Error updating power';
+            }
+        };
+
+        brightnessSlider.oninput = () => {
+            brightnessVal.textContent = brightnessSlider.value;
+        };
+
+        brightnessSlider.onchange = async () => {
+            try {
+                await fetch(`/api/brightness?value=${brightnessSlider.value}`, { method: 'POST' });
+                statusText.textContent = `Brightness: ${brightnessSlider.value}%`;
+            } catch (err) {
+                statusText.textContent = 'Error updating brightness';
+            }
+        };
+
+        // Initial sync
+        updateStatus();
+    </script>
+</body>
+</html>

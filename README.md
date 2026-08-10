@@ -5,6 +5,7 @@ This project is a high-performance LED driver for ESP-IDF (specifically targetin
 ## Features
 
 - **REST API Control**: Simple HTTP interface to adjust brightness and toggle power.
+- **Web UI**: Modern browser interface to control the LED visually.
 - **Granular PWM**: Configurable frequency (default 5 kHz) and resolution (up to 13-bit / 8,192 steps) for smooth, flicker-free dimming.
 - **WiFi Connectivity**: Station mode support with automatic reconnection logic.
 - **Flexible Hardware Configuration**:
@@ -53,7 +54,11 @@ idf.py flash monitor
 
 Once connected, the device will log its IP address and the specific URLs to use.
 
-| Endpoint | Method | Parameter | Description |
+### Web UI
+
+Navigate to `http://<device_ip>/` to access the graphical control interface.
+
+### REST Endpoints
 | :--- | :--- | :--- | :--- |
 | `/api/brightness` | `POST` | `value=0-100` | Set brightness percentage. |
 | `/api/brightness` | `GET` | *None* | Get current brightness level. |
