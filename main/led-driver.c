@@ -519,7 +519,7 @@ void wifi_init(void)
 
     // Define country parameters to prevent iOS from filtering out the beacon
     wifi_country_t country_config = {
-        .cc = "US",
+        .cc = "TH",
         .schan = 1,
         .nchan = 11,
         .policy = WIFI_COUNTRY_POLICY_MANUAL
