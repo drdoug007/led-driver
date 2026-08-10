@@ -532,8 +532,9 @@ void wifi_init(void)
     
     ESP_ERROR_CHECK(esp_wifi_start());
 
-    // Force the SoftAP profile to use legacy protocols so mobile devices can see it
+    // Force both Station and SoftAP interfaces to stick to standard 11g/n protocols
     ESP_ERROR_CHECK(esp_wifi_set_protocol(WIFI_IF_AP, WIFI_PROTOCOL_11B | WIFI_PROTOCOL_11G | WIFI_PROTOCOL_11N));
+    ESP_ERROR_CHECK(esp_wifi_set_protocol(WIFI_IF_STA, WIFI_PROTOCOL_11B | WIFI_PROTOCOL_11G | WIFI_PROTOCOL_11N));
 
     ESP_LOGI(TAG, "WiFi started in APSTA mode. SSID:myssid Password:mypassword");
 
