@@ -21,3 +21,7 @@ Accept: application/json
 ### Turn Channel 0 ON
 POST http://192.168.20.182/api/power?ch=0&value=on
 Accept: application/json
+
+### Configure WiFi and Restart
+POST http://192.168.20.182/api/wifi?ssid=MyNetwork&password=MyPassword
+Accept: application/json

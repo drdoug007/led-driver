@@ -7,9 +7,9 @@ This project is a high-performance LED driver for ESP-IDF (specifically targetin
 - **6-Channel Support**: Independent control for up to 6 LED strips (specifically optimized for HL-SAB-NPN-6).
 - **REST API Control**: Simple HTTP interface to adjust brightness and toggle power per channel.
 - **Web UI**: Modern dashboard to control all 6 channels visually (includes custom favicon).
-- **Security**: WiFi passwords are masked in system logs to protect credentials.
+- **Multi-Mode WiFi**: Supports secure provisioning via SoftAP if station connection fails.
+- **Security**: WiFi passwords are masked in system logs and stored securely in NVS.
 - **Granular PWM**: Configurable frequency (default 5 kHz) and resolution (up to 13-bit / 8,192 steps) for smooth, flicker-free dimming.
-- **WiFi Connectivity**: Station mode support with automatic reconnection logic.
 - **Flexible Hardware Configuration**:
     - Configurable GPIO pins for all 6 channels (defaults D0-D5).
     - Adjustable GPIO drive strength (up to 40mA) to sharpen signal edges.
@@ -30,23 +30,32 @@ This project is a high-performance LED driver for ESP-IDF (specifically targetin
 
 ### 1. Configure the Project
 
-Before building, you must configure your WiFi credentials and LED settings:
+Hardware settings can be adjusted via the build system:
 
 ```bash
 idf.py menuconfig
 ```
 
 Navigate to:
-- **Example Connection Configuration**: Set your WiFi SSID and Password.
 - **LED Configuration**:
-    - **LED GPIO Pin**: Set the output pin.
+    - **LED GPIO Pin**: Set the output pins for each channel.
     - **GPIO Output Mode**: Choose Push-Pull or Open-Drain.
     - **GPIO Drive Strength**: Adjust to reduce signal ramping.
     - **PWM Frequency (Hz)**: 5000 Hz is recommended for COB strips.
     - **PWM Resolution (bits)**: 13 bits provides high-precision dimming.
-    - **Invert PWM Logic**: Enable if using an active-low driver or optocoupler (e.g., HL-SAB-NPN-1).
+    - **Invert PWM Logic**: Enable if using an active-low driver or optocoupler (e.g., HL-SAB-NPN-6).
 
-### 2. Build and Flash
+### 2. WiFi Provisioning
+
+The project supports secure WiFi provisioning without hardcoding credentials:
+1. **Initial Boot**: If no credentials are saved (or connection fails), the device starts in **Access Point (AP) Mode**.
+2. **Connect to AP**: Connect your phone/computer to the WiFi network `LED-Driver-XXXXXX`.
+3. **Configure**: Open `http://192.168.4.1/` in your browser.
+4. **Save**: Enter your WiFi SSID and Password in the dashboard and click **Save & Restart**.
+
+Credentials are stored securely in NVS. You can still set "fallback" credentials in `idf.py menuconfig` under `Example Connection Configuration`.
+
+### 3. Build and Flash
 
 ```bash
 idf.py build
@@ -68,6 +77,7 @@ Navigate to `http://<device_ip>/` to access the graphical control interface.
 | `/api/power` | `POST` | `ch=0-5`, `value=on\|off` | Toggle power for a channel. |
 | `/api/power` | `GET` | `ch=0-5` (optional) | Get power status (single channel or all). |
 | `/api/led_info` | `GET` | *None* | Get configured LED GPIO pins. |
+| `/api/wifi` | `POST` | `ssid=xxx`, `password=yyy` | Save WiFi credentials and restart. |
 
 ### Examples
 

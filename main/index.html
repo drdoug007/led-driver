@@ -102,6 +102,22 @@
     <div class="container">
         <h1>LED Dashboard</h1>
         <div id="led-grid" class="grid"></div>
+        
+        <div class="card" style="margin-top: 20px; grid-column: 1 / -1;">
+            <h2>WiFi Configuration</h2>
+            <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end;">
+                <div style="flex: 1; min-width: 200px;">
+                    <span class="label-text">SSID</span>
+                    <input type="text" id="wifi-ssid" style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid #ccc; margin-top: 5px;" placeholder="Network Name">
+                </div>
+                <div style="flex: 1; min-width: 200px;">
+                    <span class="label-text">PASSWORD</span>
+                    <input type="password" id="wifi-pass" style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid #ccc; margin-top: 5px;" placeholder="WiFi Password">
+                </div>
+                <button id="wifi-save" style="background: var(--primary-color); color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; height: 38px; font-weight: 600;">Save & Restart</button>
+            </div>
+        </div>
+
         <div class="status-bar" id="status-text">Connecting to ESP32...</div>
     </div>
 
@@ -178,6 +194,28 @@
         }
 
         for (let i = 0; i < NUM_CHANNELS; i++) createCard(i);
+
+        document.getElementById('wifi-save').onclick = async () => {
+            const ssid = document.getElementById('wifi-ssid').value;
+            const pass = document.getElementById('wifi-pass').value;
+            if(!ssid) {
+                alert('Please enter at least an SSID');
+                return;
+            }
+            if(!confirm('Device will restart to apply new WiFi settings. Continue?')) return;
+            
+            statusText.textContent = 'Saving WiFi settings...';
+            try {
+                const res = await fetch(`/api/wifi?ssid=${encodeURIComponent(ssid)}&password=${encodeURIComponent(pass)}`, { method: 'POST' });
+                const data = await res.json();
+                statusText.textContent = data.message;
+                alert(data.message);
+            } catch (err) {
+                statusText.textContent = 'Error saving WiFi settings';
+                alert('Error saving WiFi settings');
+            }
+        };
+
         sync();
         // Periodic sync every 5 seconds
         setInterval(sync, 5000);

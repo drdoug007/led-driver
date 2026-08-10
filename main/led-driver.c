@@ -11,6 +11,7 @@
 #include "nvs_flash.h"
 #include "esp_event.h"
 #include "esp_wifi.h"
+#include "esp_mac.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/event_groups.h"
@@ -44,6 +45,39 @@ static EventGroupHandle_t s_wifi_event_group;
 static int s_retry_num = 0;
 static int s_brightness[NUM_CHANNELS] = {50, 50, 50, 50, 50, 50};
 static bool s_led_on[NUM_CHANNELS] = {true, true, true, true, true, true};
+
+#define WIFI_STORAGE_NAMESPACE "wifi_creds"
+
+static esp_err_t save_wifi_credentials(const char* ssid, const char* password) {
+    nvs_handle_t my_handle;
+    esp_err_t err = nvs_open(WIFI_STORAGE_NAMESPACE, NVS_READWRITE, &my_handle);
+    if (err != ESP_OK) return err;
+
+    err = nvs_set_str(my_handle, "ssid", ssid);
+    if (err == ESP_OK) {
+        err = nvs_set_str(my_handle, "password", password);
+    }
+    if (err == ESP_OK) {
+        err = nvs_commit(my_handle);
+    }
+    nvs_close(my_handle);
+    return err;
+}
+
+static esp_err_t load_wifi_credentials(char* ssid, size_t ssid_len, char* password, size_t password_len) {
+    nvs_handle_t my_handle;
+    esp_err_t err = nvs_open(WIFI_STORAGE_NAMESPACE, NVS_READONLY, &my_handle);
+    if (err != ESP_OK) return err;
+
+    size_t required_ssid_len = ssid_len;
+    err = nvs_get_str(my_handle, "ssid", ssid, &required_ssid_len);
+    if (err == ESP_OK) {
+        size_t required_pass_len = password_len;
+        err = nvs_get_str(my_handle, "password", password, &required_pass_len);
+    }
+    nvs_close(my_handle);
+    return err;
+}
 
 // Helper to update hardware PWM based on current brightness and power state
 void update_led_hardware(int ch) {
@@ -273,6 +307,33 @@ esp_err_t set_power_handler(httpd_req_t *req) {
     return ESP_FAIL;
 }
 
+// REST Endpoint Handler: POST /api/wifi?ssid=xxx&password=yyy
+esp_err_t set_wifi_handler(httpd_req_t *req) {
+    char buf[128];
+    char ssid[33] = {0};
+    char password[65] = {0};
+
+    if (httpd_req_get_url_query_str(req, buf, sizeof(buf)) == ESP_OK) {
+        if (httpd_query_key_value(buf, "ssid", ssid, sizeof(ssid)) == ESP_OK &&
+            httpd_query_key_value(buf, "password", password, sizeof(password)) == ESP_OK) {
+            
+            ESP_LOGI(TAG, "Saving new WiFi credentials for SSID: %s", ssid);
+            save_wifi_credentials(ssid, password);
+            
+            httpd_resp_set_type(req, "application/json");
+            httpd_resp_sendstr(req, "{\"status\":\"success\", \"message\":\"WiFi credentials saved. Restarting...\"}");
+            
+            // Delay restart to allow response to be sent
+            vTaskDelay(pdMS_TO_TICKS(1000));
+            esp_restart();
+            return ESP_OK;
+        }
+    }
+
+    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing ssid or password");
+    return ESP_FAIL;
+}
+
 // Start HTTP Server
 httpd_handle_t start_webserver(void) {
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
@@ -336,6 +397,14 @@ httpd_handle_t start_webserver(void) {
         };
         httpd_register_uri_handler(server, &favicon_uri);
 
+        httpd_uri_t wifi_uri = {
+            .uri       = "/api/wifi",
+            .method    = HTTP_POST,
+            .handler   = set_wifi_handler,
+            .user_ctx  = NULL
+        };
+        httpd_register_uri_handler(server, &wifi_uri);
+
         ESP_LOGI(TAG, "Web server started and URI registered");
     } else {
         ESP_LOGE(TAG, "Failed to start web server");
@@ -358,6 +427,14 @@ static void event_handler(void* arg, esp_event_base_t event_base,
             xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
         }
         ESP_LOGI(TAG,"connect to the AP fail");
+    } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_AP_STACONNECTED) {
+        wifi_event_ap_staconnected_t* event = (wifi_event_ap_staconnected_t*) event_data;
+        ESP_LOGI(TAG, "station "MACSTR" join, AID=%d",
+                 MAC2STR(event->mac), event->aid);
+    } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_AP_STADISCONNECTED) {
+        wifi_event_ap_stadisconnected_t* event = (wifi_event_ap_stadisconnected_t*) event_data;
+        ESP_LOGI(TAG, "station "MACSTR" leave, AID=%d",
+                 MAC2STR(event->mac), event->aid);
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
         ESP_LOGI(TAG, "Successfully got IP: " IPSTR, IP2STR(&event->ip_info.ip));
@@ -377,14 +454,11 @@ static void event_handler(void* arg, esp_event_base_t event_base,
     }
 }
 
-void wifi_init_sta(void)
+bool wifi_init_sta(void)
 {
     s_wifi_event_group = xEventGroupCreate();
 
-    ESP_ERROR_CHECK(esp_netif_init());
-
-    ESP_ERROR_CHECK(esp_event_loop_create_default());
-    esp_netif_create_default_wifi_sta();
+    esp_netif_t *sta_netif = esp_netif_create_default_wifi_sta();
 
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
@@ -402,16 +476,26 @@ void wifi_init_sta(void)
                                                         NULL,
                                                         &instance_got_ip));
 
+    char ssid[33] = {0};
+    char password[65] = {0};
+    
+    // Try to load from NVS
+    if (load_wifi_credentials(ssid, sizeof(ssid), password, sizeof(password)) != ESP_OK) {
+        ESP_LOGI(TAG, "No WiFi credentials found in NVS, using Kconfig defaults.");
+        strncpy(ssid, CONFIG_ESP_WIFI_SSID, sizeof(ssid) - 1);
+        strncpy(password, CONFIG_ESP_WIFI_PASSWORD, sizeof(password) - 1);
+    } else {
+        ESP_LOGI(TAG, "Loaded WiFi credentials from NVS for SSID: %s", ssid);
+    }
+
     wifi_config_t wifi_config = {
         .sta = {
-            .ssid = CONFIG_ESP_WIFI_SSID,
-            .password = CONFIG_ESP_WIFI_PASSWORD,
-            /* Setting a password implies station will connect to all security modes including WEP/WPA.
-             * However these modes are deprecated and not advisable to be used. Incase your Access point
-             * doesn't support WPA2, these mode can be enabled by setting threshold.authmode */
             .threshold.authmode = WIFI_AUTH_WPA2_PSK,
         },
     };
+    strncpy((char*)wifi_config.sta.ssid, ssid, sizeof(wifi_config.sta.ssid));
+    strncpy((char*)wifi_config.sta.password, password, sizeof(wifi_config.sta.password));
+
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA) );
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config) );
     ESP_ERROR_CHECK(esp_wifi_start() );
@@ -426,17 +510,69 @@ void wifi_init_sta(void)
             pdFALSE,
             portMAX_DELAY);
 
-    /* xEventGroupWaitBits() returns the bits before the call returned, hence we can test which event actually
-     * happened. */
+    bool connected = false;
     if (bits & WIFI_CONNECTED_BIT) {
-        ESP_LOGI(TAG, "connected to ap SSID:%s password:******",
-                 CONFIG_ESP_WIFI_SSID);
+        ESP_LOGI(TAG, "connected to ap SSID:%s password:******", ssid);
+        connected = true;
     } else if (bits & WIFI_FAIL_BIT) {
-        ESP_LOGI(TAG, "Failed to connect to SSID:%s, password:******",
-                 CONFIG_ESP_WIFI_SSID);
+        ESP_LOGI(TAG, "Failed to connect to SSID:%s, password:******", ssid);
     } else {
         ESP_LOGE(TAG, "UNEXPECTED EVENT");
     }
+    
+    // Cleanup if failed
+    if (!connected) {
+        ESP_ERROR_CHECK(esp_event_handler_instance_unregister(IP_EVENT, IP_EVENT_STA_GOT_IP, instance_got_ip));
+        ESP_ERROR_CHECK(esp_event_handler_instance_unregister(WIFI_EVENT, ESP_EVENT_ANY_ID, instance_any_id));
+        esp_wifi_stop();
+        esp_wifi_deinit();
+        esp_netif_destroy_default_wifi(sta_netif);
+    }
+    
+    return connected;
+}
+
+void wifi_init_softap(void)
+{
+    ESP_LOGI(TAG, "Starting SoftAP mode...");
+    
+    esp_netif_t *ap_netif = esp_netif_create_default_wifi_ap();
+
+    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+
+    ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT,
+                                                        ESP_EVENT_ANY_ID,
+                                                        &event_handler,
+                                                        NULL,
+                                                        NULL));
+
+    uint8_t mac[6];
+    esp_read_mac(mac, ESP_MAC_WIFI_SOFTAP);
+    char ap_ssid[32];
+    snprintf(ap_ssid, sizeof(ap_ssid), "LED-Driver-%02X%02X%02X", mac[3], mac[4], mac[5]);
+
+    wifi_config_t wifi_config = {
+        .ap = {
+            .ssid_len = strlen(ap_ssid),
+            .channel = 1,
+            .password = "",
+            .max_connection = 4,
+            .authmode = WIFI_AUTH_OPEN
+        },
+    };
+    strncpy((char*)wifi_config.ap.ssid, ap_ssid, sizeof(wifi_config.ap.ssid));
+
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
+    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &wifi_config));
+    ESP_ERROR_CHECK(esp_wifi_start());
+
+    ESP_LOGI(TAG, "wifi_init_softap finished. SSID:%s", ap_ssid);
+    
+    esp_netif_ip_info_t ip_info;
+    esp_netif_get_ip_info(ap_netif, &ip_info);
+    ESP_LOGI(TAG, "SoftAP IP: " IPSTR, IP2STR(&ip_info.ip));
+    ESP_LOGI(TAG, "Connect to this WiFi and go to http://" IPSTR "/ to configure", IP2STR(&ip_info.ip));
 }
 
 void app_main(void) {
@@ -451,8 +587,12 @@ void app_main(void) {
     // Initialize PWM first so the LED works even without WiFi
     init_pwm();
     
-    ESP_LOGI(TAG, "ESP_WIFI_MODE_STA");
-    wifi_init_sta();
+    ESP_ERROR_CHECK(esp_netif_init());
+    ESP_ERROR_CHECK(esp_event_loop_create_default());
+
+    if (!wifi_init_sta()) {
+        wifi_init_softap();
+    }
 
     // Start Webserver
     start_webserver();
