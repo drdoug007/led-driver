@@ -5,6 +5,8 @@
 #include "esp_http_server.h"
 #include "driver/ledc.h"
 #include "driver/gpio.h"
+#include "hal/ledc_periph.h"
+#include "esp_rom_gpio.h"
 #include "esp_netif.h"
 #include "nvs_flash.h"
 #include "esp_event.h"
@@ -73,18 +75,25 @@ void init_pwm(void) {
     ESP_LOGI(TAG, "LED GPIO drive strength set to %d", CONFIG_LEDC_DRIVE_STRENGTH);
     ESP_LOGI(TAG, "PWM Frequency: %d Hz, Resolution: %d bits", LEDC_FREQUENCY, CONFIG_LEDC_PWM_RES);
 
-    // Apply Output Mode (Push-Pull vs Open-Drain)
-    // Note: We apply this after ledc_channel_config to ensure the driver mode is set,
-    // but we must be careful not to reset the GPIO Mux.
+    // Apply Output Mode (Push-Pull vs Open-Drain) and Logic Inversion
 #if CONFIG_LEDC_OUTPUT_MODE_OD
     gpio_set_direction(LEDC_GPIO, GPIO_MODE_OUTPUT_OD);
-    // Re-link the LEDC signal to the GPIO (Target: ESP32-C6)
-    // Signal indices are defined in soc/gpio_sig_map.h
-    esp_rom_gpio_connect_out_signal(LEDC_GPIO, ledc_periph_signal[LEDC_MODE].sig_out0[LEDC_CHANNEL], false, false);
     ESP_LOGI(TAG, "LED GPIO configured in Open-Drain mode. External pull-up required.");
 #else
+    gpio_set_direction(LEDC_GPIO, GPIO_MODE_OUTPUT);
     ESP_LOGI(TAG, "LED GPIO configured in Push-Pull mode.");
 #endif
+
+    // Apply signal inversion if configured
+    bool invert = false;
+#if CONFIG_LEDC_INVERT_LOGIC
+    invert = true;
+    ESP_LOGI(TAG, "PWM Logic Inversion enabled.");
+#endif
+
+    // Re-link the LEDC signal to the GPIO (Target: ESP32-C6)
+    // Signal indices are defined in hal/ledc_periph.h
+    esp_rom_gpio_connect_out_signal(LEDC_GPIO, ledc_periph_signal[0].speed_mode[LEDC_MODE].sig_out_idx[LEDC_CHANNEL], invert, false);
 
     // Apply initial hardware state
     update_led_hardware();

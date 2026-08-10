@@ -66,4 +66,12 @@ menu "LED Configuration"
             Bit depth of the PWM resolution.
             13 bits gives 8192 steps of dimming resolution.
 
+    config LEDC_INVERT_LOGIC
+        bool "Invert PWM Logic"
+        default n
+        help
+            Invert the PWM signal logic.
+            Useful for optocouplers or active-low LED drivers where
+            a 'High' signal from the MCU turns the LED OFF.
+
 endmenu
