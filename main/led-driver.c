@@ -559,10 +559,10 @@ void wifi_init_softap(void)
 
     wifi_config_t wifi_config = {
         .ap = {
-            .channel = 1,
-            .password = "",
+            .channel = 11,
+            .password = "password123",
             .max_connection = 4,
-            .authmode = WIFI_AUTH_OPEN,
+            .authmode = WIFI_AUTH_WPA2_PSK,
             .ssid_hidden = 0,
             .beacon_interval = 100,
             .pmf_cfg = {
@@ -571,7 +571,7 @@ void wifi_init_softap(void)
         },
     };
     strncpy((char*)wifi_config.ap.ssid, ap_ssid, sizeof(wifi_config.ap.ssid));
-    wifi_config.ap.ssid_len = strlen(ap_ssid);
+    wifi_config.ap.ssid_len = 0; // Use null-termination
 
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
     
@@ -593,15 +593,16 @@ void wifi_init_softap(void)
     ESP_ERROR_CHECK(esp_wifi_start());
 
     // Post-start configuration for better compatibility
+    esp_wifi_set_protocol(WIFI_IF_AP, WIFI_PROTOCOL_11B | WIFI_PROTOCOL_11G | WIFI_PROTOCOL_11N);
     esp_wifi_set_bandwidth(WIFI_IF_AP, WIFI_BW20);
     esp_wifi_set_ps(WIFI_PS_NONE);
 
-    ESP_LOGI(TAG, "wifi_init_softap finished. SSID:%s", ap_ssid);
+    ESP_LOGI(TAG, "wifi_init_softap finished. SSID:%s Password:password123", ap_ssid);
     
     esp_netif_ip_info_t ip_info;
     esp_netif_get_ip_info(ap_netif, &ip_info);
     ESP_LOGI(TAG, "SoftAP IP: " IPSTR, IP2STR(&ip_info.ip));
-    ESP_LOGI(TAG, "Connect to this WiFi and go to http://" IPSTR "/ to configure", IP2STR(&ip_info.ip));
+    ESP_LOGI(TAG, "Connect to this WiFi (pass: password123) and go to http://" IPSTR "/ to configure", IP2STR(&ip_info.ip));
 }
 
 void app_main(void) {
