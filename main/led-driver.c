@@ -473,10 +473,18 @@ void wifi_init(void)
                                                         NULL,
                                                         NULL));
     ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT,
-                                                        IP_EVENT_STA_GOT_IP,
+                                                        ESP_EVENT_ANY_ID,
                                                         &event_handler,
                                                         NULL,
                                                         NULL));
+
+    // Common Country Config to satisfy regulatory markers for iOS/macOS
+    wifi_country_t country_config = {
+        .cc = "TH",
+        .schan = 1,
+        .nchan = 11,
+        .policy = WIFI_COUNTRY_POLICY_MANUAL
+    };
 
     // SoftAP Config
     wifi_config_t ap_config = {
@@ -494,65 +502,65 @@ void wifi_init(void)
         },
     };
 
-    // Station Config
+    // Try to load credentials from NVS
     char sta_ssid[33] = {0};
     char sta_password[65] = {0};
-    if (load_wifi_credentials(sta_ssid, sizeof(sta_ssid), sta_password, sizeof(sta_password)) != ESP_OK) {
-        ESP_LOGI(TAG, "No WiFi credentials found in NVS, using defaults.");
-        strncpy(sta_ssid, CONFIG_ESP_WIFI_SSID, sizeof(sta_ssid) - 1);
-        strncpy(sta_password, CONFIG_ESP_WIFI_PASSWORD, sizeof(sta_password) - 1);
-    }
-    
-    wifi_config_t sta_config = {
-        .sta = {
-            .ssid = "",
-            .password = "",
-            .scan_method = WIFI_ALL_CHANNEL_SCAN,
-            .failure_retry_cnt = CONFIG_ESP_MAXIMUM_RETRY,
-            .threshold.authmode = WIFI_AUTH_WPA2_PSK,
-            .sae_pwe_h2e = WPA3_SAE_PWE_BOTH,
-        },
-    };
-    strncpy((char*)sta_config.sta.ssid, sta_ssid, sizeof(sta_config.sta.ssid));
-    strncpy((char*)sta_config.sta.password, sta_password, sizeof(sta_config.sta.password));
+    bool has_creds = (load_wifi_credentials(sta_ssid, sizeof(sta_ssid), sta_password, sizeof(sta_password)) == ESP_OK);
 
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA));
+    if (has_creds) {
+        ESP_LOGI(TAG, "Saved credentials found. Initializing Station Connection...");
+        
+        wifi_config_t sta_config = {
+            .sta = {
+                .scan_method = WIFI_ALL_CHANNEL_SCAN,
+                .failure_retry_cnt = CONFIG_ESP_MAXIMUM_RETRY,
+                .threshold.authmode = WIFI_AUTH_WPA2_PSK,
+                .sae_pwe_h2e = WPA3_SAE_PWE_BOTH,
+            },
+        };
+        strncpy((char*)sta_config.sta.ssid, sta_ssid, sizeof(sta_config.sta.ssid));
+        strncpy((char*)sta_config.sta.password, sta_password, sizeof(sta_config.sta.password));
 
-    // Define country parameters to prevent iOS from filtering out the beacon
-    wifi_country_t country_config = {
-        .cc = "TH",
-        .schan = 1,
-        .nchan = 11,
-        .policy = WIFI_COUNTRY_POLICY_MANUAL
-    };
-    ESP_ERROR_CHECK(esp_wifi_set_country(&country_config));
+        // Start in Station Mode ONLY to avoid radio dropouts during scanning
+        ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+        ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &sta_config));
+        ESP_ERROR_CHECK(esp_wifi_start());
+        
+        // Force legacy protocol for compatibility
+        ESP_ERROR_CHECK(esp_wifi_set_protocol(WIFI_IF_STA, WIFI_PROTOCOL_11B | WIFI_PROTOCOL_11G | WIFI_PROTOCOL_11N));
 
-    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &ap_config));
-    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &sta_config));
-    
-    ESP_ERROR_CHECK(esp_wifi_start());
+        /* Wait for connection */
+        ESP_LOGI(TAG, "Waiting for station connection...");
+        EventBits_t bits = xEventGroupWaitBits(s_wifi_event_group,
+                WIFI_CONNECTED_BIT | WIFI_FAIL_BIT,
+                pdFALSE,
+                pdFALSE,
+                portMAX_DELAY);
 
-    // Force both Station and SoftAP interfaces to stick to standard 11g/n protocols
-    ESP_ERROR_CHECK(esp_wifi_set_protocol(WIFI_IF_AP, WIFI_PROTOCOL_11B | WIFI_PROTOCOL_11G | WIFI_PROTOCOL_11N));
-    ESP_ERROR_CHECK(esp_wifi_set_protocol(WIFI_IF_STA, WIFI_PROTOCOL_11B | WIFI_PROTOCOL_11G | WIFI_PROTOCOL_11N));
-
-    ESP_LOGI(TAG, "WiFi started in APSTA mode. SSID:myssid Password:mypassword");
-
-    /* Wait for connection */
-    EventBits_t bits = xEventGroupWaitBits(s_wifi_event_group,
-            WIFI_CONNECTED_BIT | WIFI_FAIL_BIT,
-            pdFALSE,
-            pdFALSE,
-            portMAX_DELAY);
-
-    if (bits & WIFI_CONNECTED_BIT) {
-        ESP_LOGI(TAG, "Station connected to SSID:%s", sta_ssid);
-        esp_netif_set_default_netif(sta_netif);
-#if CONFIG_LWIP_IPV4_NAPT
-        esp_netif_napt_enable(ap_netif);
-#endif
+        if (bits & WIFI_CONNECTED_BIT) {
+            ESP_LOGI(TAG, "Station connected to SSID:%s", sta_ssid);
+            esp_netif_set_default_netif(sta_netif);
+        } else {
+            ESP_LOGW(TAG, "Station failed to connect. Falling back to SoftAP Mode for configuration...");
+            esp_wifi_stop();
+            ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
+            ESP_ERROR_CHECK(esp_wifi_set_country(&country_config));
+            ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &ap_config));
+            ESP_ERROR_CHECK(esp_wifi_start());
+            ESP_ERROR_CHECK(esp_wifi_set_protocol(WIFI_IF_AP, WIFI_PROTOCOL_11B | WIFI_PROTOCOL_11G | WIFI_PROTOCOL_11N));
+        }
     } else {
-        ESP_LOGI(TAG, "Station failed to connect, staying in SoftAP mode for configuration.");
+        ESP_LOGW(TAG, "No credentials in NVS. Booting into clean Config SoftAP Mode...");
+        
+        ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
+        ESP_ERROR_CHECK(esp_wifi_set_country(&country_config));
+        ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &ap_config));
+        ESP_ERROR_CHECK(esp_wifi_start());
+        
+        // Protocol override after start
+        ESP_ERROR_CHECK(esp_wifi_set_protocol(WIFI_IF_AP, WIFI_PROTOCOL_11B | WIFI_PROTOCOL_11G | WIFI_PROTOCOL_11N));
+        
+        ESP_LOGI(TAG, "SoftAP interface broadcasting steadily. SSID:myssid Password:mypassword");
     }
 }
 
