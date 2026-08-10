@@ -516,10 +516,23 @@ void wifi_init(void)
     strncpy((char*)sta_config.sta.password, sta_password, sizeof(sta_config.sta.password));
 
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA));
+
+    // Define country parameters to prevent iOS from filtering out the beacon
+    wifi_country_t country_config = {
+        .cc = "US",
+        .schan = 1,
+        .nchan = 11,
+        .policy = WIFI_COUNTRY_POLICY_MANUAL
+    };
+    ESP_ERROR_CHECK(esp_wifi_set_country(&country_config));
+
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &ap_config));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &sta_config));
     
     ESP_ERROR_CHECK(esp_wifi_start());
+
+    // Force the SoftAP profile to use legacy protocols so mobile devices can see it
+    ESP_ERROR_CHECK(esp_wifi_set_protocol(WIFI_IF_AP, WIFI_PROTOCOL_11B | WIFI_PROTOCOL_11G | WIFI_PROTOCOL_11N));
 
     ESP_LOGI(TAG, "WiFi started in APSTA mode. SSID:myssid Password:mypassword");
 
