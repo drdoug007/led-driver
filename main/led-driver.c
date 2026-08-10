@@ -429,9 +429,10 @@ static void event_handler(void* arg, esp_event_base_t event_base,
             ESP_LOGI(TAG, "Failed to connect to the AP after %d retries", CONFIG_ESP_MAXIMUM_RETRY);
         }
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_AP_START) {
+        ESP_LOGI(TAG, "🚀 SoftAP started successfully! Checking for visibility...");
         wifi_config_t conf;
         esp_wifi_get_config(WIFI_IF_AP, &conf);
-        ESP_LOGI(TAG, "SoftAP started. SSID:%s channel:%d", conf.ap.ssid, conf.ap.channel);
+        ESP_LOGI(TAG, "SoftAP SSID:%s channel:%d", conf.ap.ssid, conf.ap.channel);
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_AP_STACONNECTED) {
         wifi_event_ap_staconnected_t* event = (wifi_event_ap_staconnected_t*) event_data;
         ESP_LOGI(TAG, "Station "MACSTR" joined, AID=%d", MAC2STR(event->mac), event->aid);
@@ -511,14 +512,25 @@ void wifi_init(void)
     strncpy((char*)sta_config.sta.password, sta_password, sizeof(sta_config.sta.password));
 
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA));
+    
+    // Set country code to US with manual policy for stable channel selection
+    wifi_country_t country = {
+        .cc = "US",
+        .schan = 1,
+        .nchan = 11,
+        .policy = WIFI_COUNTRY_POLICY_MANUAL,
+    };
+    ESP_ERROR_CHECK(esp_wifi_set_country(&country));
+
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &ap_config));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &sta_config));
     
-    // Compatibility fixes for C6 SoftAP visibility
-    esp_wifi_set_protocol(WIFI_IF_AP, WIFI_PROTOCOL_11B | WIFI_PROTOCOL_11G | WIFI_PROTOCOL_11N);
-    
     ESP_ERROR_CHECK(esp_wifi_start());
     
+    // Fallback the SoftAP interface to legacy 802.11b/g/n mode for full compatibility
+    // This MUST be called after esp_wifi_start() according to the checklist
+    ESP_ERROR_CHECK(esp_wifi_set_protocol(WIFI_IF_AP, WIFI_PROTOCOL_11B | WIFI_PROTOCOL_11G | WIFI_PROTOCOL_11N));
+
     // Post-start compatibility tweaks
     esp_wifi_set_bandwidth(WIFI_IF_AP, WIFI_BW20);
     esp_wifi_set_ps(WIFI_PS_NONE);
