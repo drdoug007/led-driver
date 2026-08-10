@@ -488,6 +488,7 @@ void wifi_init(void)
             .max_connection = 4,
             .authmode = WIFI_AUTH_WPA2_PSK,
             .pmf_cfg = {
+                .capable = true,
                 .required = false,
             },
         },
