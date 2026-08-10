@@ -4,13 +4,14 @@ This project is a high-performance LED driver for ESP-IDF (specifically targetin
 
 ## Features
 
-- **REST API Control**: Simple HTTP interface to adjust brightness and toggle power.
-- **Web UI**: Modern browser interface to control the LED visually (includes custom favicon).
+- **6-Channel Support**: Independent control for up to 6 LED strips (specifically optimized for HL-SAB-NPN-6).
+- **REST API Control**: Simple HTTP interface to adjust brightness and toggle power per channel.
+- **Web UI**: Modern dashboard to control all 6 channels visually (includes custom favicon).
 - **Security**: WiFi passwords are masked in system logs to protect credentials.
 - **Granular PWM**: Configurable frequency (default 5 kHz) and resolution (up to 13-bit / 8,192 steps) for smooth, flicker-free dimming.
 - **WiFi Connectivity**: Station mode support with automatic reconnection logic.
 - **Flexible Hardware Configuration**:
-    - Configurable GPIO pin (default D2/GPIO 2).
+    - Configurable GPIO pins for all 6 channels (defaults D0-D5).
     - Adjustable GPIO drive strength (up to 40mA) to sharpen signal edges.
     - Support for both Push-Pull and Open-Drain output modes.
     - **Signal Inversion**: Support for active-low drivers (e.g., NPN optocouplers) via hardware signal inversion.
@@ -18,11 +19,12 @@ This project is a high-performance LED driver for ESP-IDF (specifically targetin
 
 ## Hardware Requirements
 
-- **ESP32-C6 Development Board** (or compatible ESP32 variant).
+- **ESP32-C6 Development Board** (specifically XIAO ESP32-C6 for 6-channel header layout).
 - **LED/LED Strip**:
+    - Supports up to 6 strips via the **HL-SAB-NPN-6** MOSFET board.
     - For standard LEDs: Push-Pull mode (default).
     - For high-power strips via optocouplers/MOSFETs: Open-Drain mode may be required (requires external pull-up).
-- **Default Pin**: GPIO 2 (labeled D2 on many boards).
+- **Default Pins**: D0-D5 (GPIOs 0, 1, 2, 3, 4, 5).
 
 ## Getting Started
 
@@ -61,22 +63,22 @@ Navigate to `http://<device_ip>/` to access the graphical control interface.
 
 ### REST Endpoints
 | :--- | :--- | :--- | :--- |
-| `/api/brightness` | `POST` | `value=0-100` | Set brightness percentage. |
-| `/api/brightness` | `GET` | *None* | Get current brightness level. |
-| `/api/power` | `POST` | `value=on\|off` | Toggle LED power. |
-| `/api/power` | `GET` | *None* | Get current power status. |
-| `/api/led_info` | `GET` | *None* | Get configured LED GPIO pin. |
+| `/api/brightness` | `POST` | `ch=0-5`, `value=0-100` | Set brightness percentage for a channel. |
+| `/api/brightness` | `GET` | `ch=0-5` (optional) | Get brightness (single channel or all). |
+| `/api/power` | `POST` | `ch=0-5`, `value=on\|off` | Toggle power for a channel. |
+| `/api/power` | `GET` | `ch=0-5` (optional) | Get power status (single channel or all). |
+| `/api/led_info` | `GET` | *None* | Get configured LED GPIO pins. |
 
 ### Examples
 
-**Set brightness to 60%:**
+**Set brightness of Channel 2 to 60%:**
 ```http
-POST http://<device_ip>/api/brightness?value=60
+POST http://<device_ip>/api/brightness?ch=2&value=60
 ```
 
-**Turn LED off:**
+**Turn Channel 0 off:**
 ```http
-POST http://<device_ip>/api/power?value=off
+POST http://<device_ip>/api/power?ch=0&value=off
 ```
 
 ## Project Structure

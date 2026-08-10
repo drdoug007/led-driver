@@ -15,12 +15,20 @@
 #include "freertos/task.h"
 #include "freertos/event_groups.h"
 
-#define LEDC_GPIO              CONFIG_LEDC_GPIO
+#define NUM_CHANNELS           6
 #define LEDC_MODE              LEDC_LOW_SPEED_MODE
-#define LEDC_CHANNEL           LEDC_CHANNEL_0
 #define LEDC_TIMER             LEDC_TIMER_0
 #define LEDC_DUTY_RES          ((ledc_timer_bit_t)CONFIG_LEDC_PWM_RES)
 #define LEDC_FREQUENCY         CONFIG_LEDC_PWM_FREQ
+
+static const int LEDC_GPIOS[NUM_CHANNELS] = {
+    CONFIG_LEDC_GPIO_0,
+    CONFIG_LEDC_GPIO_1,
+    CONFIG_LEDC_GPIO_2,
+    CONFIG_LEDC_GPIO_3,
+    CONFIG_LEDC_GPIO_4,
+    CONFIG_LEDC_GPIO_5
+};
 
 static const char *TAG = "led_control";
 
@@ -34,18 +42,20 @@ static EventGroupHandle_t s_wifi_event_group;
 #define WIFI_FAIL_BIT      BIT1
 
 static int s_retry_num = 0;
-static int s_brightness = 50;
-static bool s_led_on = true;
+static int s_brightness[NUM_CHANNELS] = {50, 50, 50, 50, 50, 50};
+static bool s_led_on[NUM_CHANNELS] = {true, true, true, true, true, true};
 
 // Helper to update hardware PWM based on current brightness and power state
-void update_led_hardware(void) {
+void update_led_hardware(int ch) {
+    if (ch < 0 || ch >= NUM_CHANNELS) return;
+    
     uint32_t duty = 0;
-    if (s_led_on) {
+    if (s_led_on[ch]) {
         uint32_t max_duty = (1 << CONFIG_LEDC_PWM_RES) - 1;
-        duty = (s_brightness * max_duty) / 100;
+        duty = (s_brightness[ch] * max_duty) / 100;
     }
-    ledc_set_duty(LEDC_MODE, LEDC_CHANNEL, duty);
-    ledc_update_duty(LEDC_MODE, LEDC_CHANNEL);
+    ledc_set_duty(LEDC_MODE, (ledc_channel_t)ch, duty);
+    ledc_update_duty(LEDC_MODE, (ledc_channel_t)ch);
 }
 
 // Initialize LEDC (PWM)
@@ -59,53 +69,53 @@ void init_pwm(void) {
     };
     ledc_timer_config(&ledc_timer);
 
-    ledc_channel_config_t ledc_channel = {
-        .speed_mode     = LEDC_MODE,
-        .channel        = LEDC_CHANNEL,
-        .timer_sel      = LEDC_TIMER,
-        .intr_type      = LEDC_INTR_DISABLE,
-        .gpio_num       = LEDC_GPIO,
-        .duty           = 0, // Initially off
-        .hpoint         = 0
-    };
-    ledc_channel_config(&ledc_channel);
-    
-    // Set drive strength to sharpen edges (does not affect GPIO Mux)
-    gpio_set_drive_capability(LEDC_GPIO, CONFIG_LEDC_DRIVE_STRENGTH);
-    ESP_LOGI(TAG, "LED GPIO drive strength set to %d", CONFIG_LEDC_DRIVE_STRENGTH);
-    ESP_LOGI(TAG, "PWM Frequency: %d Hz, Resolution: %d bits", LEDC_FREQUENCY, CONFIG_LEDC_PWM_RES);
-
-    // Apply Output Mode (Push-Pull vs Open-Drain) and Logic Inversion
+    for (int i = 0; i < NUM_CHANNELS; i++) {
+        ledc_channel_config_t ledc_channel = {
+            .speed_mode     = LEDC_MODE,
+            .channel        = (ledc_channel_t)i,
+            .timer_sel      = LEDC_TIMER,
+            .intr_type      = LEDC_INTR_DISABLE,
+            .gpio_num       = LEDC_GPIOS[i],
+            .duty           = 0, // Initially off
+            .hpoint         = 0
+        };
+        ledc_channel_config(&ledc_channel);
+        
+        // Set drive strength
+        gpio_set_drive_capability(LEDC_GPIOS[i], CONFIG_LEDC_DRIVE_STRENGTH);
+        
+        // Apply Output Mode
 #if CONFIG_LEDC_OUTPUT_MODE_OD
-    gpio_set_direction(LEDC_GPIO, GPIO_MODE_OUTPUT_OD);
-    ESP_LOGI(TAG, "LED GPIO configured in Open-Drain mode. External pull-up required.");
+        gpio_set_direction(LEDC_GPIOS[i], GPIO_MODE_OUTPUT_OD);
 #else
-    gpio_set_direction(LEDC_GPIO, GPIO_MODE_OUTPUT);
-    ESP_LOGI(TAG, "LED GPIO configured in Push-Pull mode.");
+        gpio_set_direction(LEDC_GPIOS[i], GPIO_MODE_OUTPUT);
 #endif
 
-    // Apply signal inversion if configured
-    bool invert = false;
+        // Apply signal inversion if configured
+        bool invert = false;
 #if CONFIG_LEDC_INVERT_LOGIC
-    invert = true;
-    ESP_LOGI(TAG, "PWM Logic Inversion enabled.");
+        invert = true;
 #endif
 
-    // Re-link the LEDC signal to the GPIO (Target: ESP32-C6)
-    // Signal indices are defined in hal/ledc_periph.h
-    esp_rom_gpio_connect_out_signal(LEDC_GPIO, ledc_periph_signal[0].speed_mode[LEDC_MODE].sig_out_idx[LEDC_CHANNEL], invert, false);
+        // Re-link the LEDC signal to the GPIO (Target: ESP32-C6)
+        esp_rom_gpio_connect_out_signal(LEDC_GPIOS[i], ledc_periph_signal[0].speed_mode[LEDC_MODE].sig_out_idx[i], invert, false);
 
-    // Apply initial hardware state
-    update_led_hardware();
+        // Apply initial hardware state
+        update_led_hardware(i);
+    }
+    
+    ESP_LOGI(TAG, "Initialized %d LED channels", NUM_CHANNELS);
+    ESP_LOGI(TAG, "PWM Frequency: %d Hz, Resolution: %d bits", LEDC_FREQUENCY, CONFIG_LEDC_PWM_RES);
 }
 
 // Set brightness helper (intensity: 0 - 100%)
-void set_led_intensity(int percent) {
+void set_led_intensity(int ch, int percent) {
+    if (ch < 0 || ch >= NUM_CHANNELS) return;
     if (percent < 0) percent = 0;
     if (percent > 100) percent = 100;
 
-    s_brightness = percent;
-    update_led_hardware();
+    s_brightness[ch] = percent;
+    update_led_hardware(ch);
 }
 
 extern const uint8_t index_html_start[] asm("_binary_index_html_start");
@@ -127,35 +137,62 @@ esp_err_t favicon_get_handler(httpd_req_t *req) {
     return ESP_OK;
 }
 
-// REST Endpoint Handler: POST /api/brightness?value=0-100
+// REST Endpoint Handler: POST /api/brightness?value=0-100&ch=0-5
 esp_err_t set_brightness_handler(httpd_req_t *req) {
-    char buf[32];
+    char buf[64];
     int percent = 0;
+    int ch = 0;
 
     ESP_LOGD(TAG, "Received brightness request, URI: %s", req->uri);
 
     if (httpd_req_get_url_query_str(req, buf, sizeof(buf)) == ESP_OK) {
         char param[10];
+        if (httpd_query_key_value(buf, "ch", param, sizeof(param)) == ESP_OK) {
+            ch = atoi(param);
+        }
         if (httpd_query_key_value(buf, "value", param, sizeof(param)) == ESP_OK) {
             percent = atoi(param);
-            ESP_LOGI(TAG, "Changing brightness to %d%%", percent);
-            set_led_intensity(percent);
+            if (ch >= 0 && ch < NUM_CHANNELS) {
+                ESP_LOGI(TAG, "Changing brightness of channel %d to %d%%", ch, percent);
+                set_led_intensity(ch, percent);
 
-            httpd_resp_set_type(req, "application/json");
-            httpd_resp_sendstr(req, "{\"status\":\"success\"}");
-            return ESP_OK;
+                httpd_resp_set_type(req, "application/json");
+                httpd_resp_sendstr(req, "{\"status\":\"success\"}");
+                return ESP_OK;
+            }
         }
     }
 
-    ESP_LOGW(TAG, "Invalid brightness request: missing or invalid 'value' parameter");
-    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing or invalid 'value' parameter");
+    ESP_LOGW(TAG, "Invalid brightness request");
+    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing or invalid parameters");
     return ESP_FAIL;
 }
 
-// REST Endpoint Handler: GET /api/brightness
+// REST Endpoint Handler: GET /api/brightness?ch=0-5
 esp_err_t get_brightness_handler(httpd_req_t *req) {
-    char json_response[64];
-    snprintf(json_response, sizeof(json_response), "{\"brightness\": %d}", s_brightness);
+    char buf[64];
+    int ch = -1;
+    char json_response[256];
+
+    if (httpd_req_get_url_query_str(req, buf, sizeof(buf)) == ESP_OK) {
+        char param[10];
+        if (httpd_query_key_value(buf, "ch", param, sizeof(param)) == ESP_OK) {
+            ch = atoi(param);
+        }
+    }
+
+    if (ch >= 0 && ch < NUM_CHANNELS) {
+        snprintf(json_response, sizeof(json_response), "{\"channel\": %d, \"brightness\": %d}", ch, s_brightness[ch]);
+    } else {
+        // Return all channels
+        int len = snprintf(json_response, sizeof(json_response), "{\"brightness\": [");
+        for (int i = 0; i < NUM_CHANNELS; i++) {
+            len += snprintf(json_response + len, sizeof(json_response) - len, "%d%s", 
+                            s_brightness[i], (i == NUM_CHANNELS - 1) ? "" : ", ");
+        }
+        snprintf(json_response + len, sizeof(json_response) - len, "]}");
+    }
+    
     httpd_resp_set_type(req, "application/json");
     httpd_resp_sendstr(req, json_response);
     return ESP_OK;
@@ -163,44 +200,76 @@ esp_err_t get_brightness_handler(httpd_req_t *req) {
 
 // REST Endpoint Handler: GET /api/led_info
 esp_err_t get_led_info_handler(httpd_req_t *req) {
-    char json_response[64];
-    snprintf(json_response, sizeof(json_response), "{\"gpio\": %d}", LEDC_GPIO);
+    char json_response[256];
+    int len = snprintf(json_response, sizeof(json_response), "{\"channels\": %d, \"gpios\": [", NUM_CHANNELS);
+    for (int i = 0; i < NUM_CHANNELS; i++) {
+        len += snprintf(json_response + len, sizeof(json_response) - len, "%d%s", 
+                        LEDC_GPIOS[i], (i == NUM_CHANNELS - 1) ? "" : ", ");
+    }
+    snprintf(json_response + len, sizeof(json_response) - len, "]}");
+    
     httpd_resp_set_type(req, "application/json");
     httpd_resp_sendstr(req, json_response);
     return ESP_OK;
 }
 
-// REST Endpoint Handler: GET /api/power
+// REST Endpoint Handler: GET /api/power?ch=0-5
 esp_err_t get_power_handler(httpd_req_t *req) {
-    char json_response[64];
-    snprintf(json_response, sizeof(json_response), "{\"power\": \"%s\"}", s_led_on ? "on" : "off");
-    httpd_resp_set_type(req, "application/json");
-    httpd_resp_sendstr(req, json_response);
-    return ESP_OK;
-}
+    char buf[64];
+    int ch = -1;
+    char json_response[256];
 
-// REST Endpoint Handler: POST /api/power?value=on|off
-esp_err_t set_power_handler(httpd_req_t *req) {
-    char buf[32];
     if (httpd_req_get_url_query_str(req, buf, sizeof(buf)) == ESP_OK) {
         char param[10];
-        if (httpd_query_key_value(buf, "value", param, sizeof(param)) == ESP_OK) {
-            if (strcmp(param, "on") == 0) {
-                s_led_on = true;
-            } else if (strcmp(param, "off") == 0) {
-                s_led_on = false;
-            } else {
-                httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid 'value' parameter. Use 'on' or 'off'.");
-                return ESP_FAIL;
-            }
-            ESP_LOGI(TAG, "LED power set to %s", s_led_on ? "ON" : "OFF");
-            update_led_hardware();
-            httpd_resp_set_type(req, "application/json");
-            httpd_resp_sendstr(req, "{\"status\":\"success\"}");
-            return ESP_OK;
+        if (httpd_query_key_value(buf, "ch", param, sizeof(param)) == ESP_OK) {
+            ch = atoi(param);
         }
     }
-    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing 'value' parameter");
+
+    if (ch >= 0 && ch < NUM_CHANNELS) {
+        snprintf(json_response, sizeof(json_response), "{\"channel\": %d, \"power\": \"%s\"}", ch, s_led_on[ch] ? "on" : "off");
+    } else {
+        int len = snprintf(json_response, sizeof(json_response), "{\"power\": [");
+        for (int i = 0; i < NUM_CHANNELS; i++) {
+            len += snprintf(json_response + len, sizeof(json_response) - len, "\"%s\"%s", 
+                            s_led_on[i] ? "on" : "off", (i == NUM_CHANNELS - 1) ? "" : ", ");
+        }
+        snprintf(json_response + len, sizeof(json_response) - len, "]}");
+    }
+    
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_sendstr(req, json_response);
+    return ESP_OK;
+}
+
+// REST Endpoint Handler: POST /api/power?value=on|off&ch=0-5
+esp_err_t set_power_handler(httpd_req_t *req) {
+    char buf[64];
+    int ch = 0;
+    if (httpd_req_get_url_query_str(req, buf, sizeof(buf)) == ESP_OK) {
+        char param[10];
+        if (httpd_query_key_value(buf, "ch", param, sizeof(param)) == ESP_OK) {
+            ch = atoi(param);
+        }
+        if (ch >= 0 && ch < NUM_CHANNELS) {
+            if (httpd_query_key_value(buf, "value", param, sizeof(param)) == ESP_OK) {
+                if (strcmp(param, "on") == 0) {
+                    s_led_on[ch] = true;
+                } else if (strcmp(param, "off") == 0) {
+                    s_led_on[ch] = false;
+                } else {
+                    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid 'value' parameter. Use 'on' or 'off'.");
+                    return ESP_FAIL;
+                }
+                ESP_LOGI(TAG, "LED Channel %d power set to %s", ch, s_led_on[ch] ? "ON" : "OFF");
+                update_led_hardware(ch);
+                httpd_resp_set_type(req, "application/json");
+                httpd_resp_sendstr(req, "{\"status\":\"success\"}");
+                return ESP_OK;
+            }
+        }
+    }
+    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing or invalid parameters");
     return ESP_FAIL;
 }
 
@@ -293,15 +362,15 @@ static void event_handler(void* arg, esp_event_base_t event_base,
         ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
         ESP_LOGI(TAG, "Successfully got IP: " IPSTR, IP2STR(&event->ip_info.ip));
         ESP_LOGI(TAG, "Web UI available at: http://" IPSTR "/", IP2STR(&event->ip_info.ip));
-        ESP_LOGI(TAG, "Real URL for changing brightness: POST http://" IPSTR "/api/brightness?value=50", 
+        ESP_LOGI(TAG, "Real URL for changing brightness: POST http://" IPSTR "/api/brightness?ch=0&value=50", 
                  IP2STR(&event->ip_info.ip));
-        ESP_LOGI(TAG, "Real URL for getting brightness:  GET  http://" IPSTR "/api/brightness", 
+        ESP_LOGI(TAG, "Real URL for getting brightness:  GET  http://" IPSTR "/api/brightness?ch=0", 
                  IP2STR(&event->ip_info.ip));
-        ESP_LOGI(TAG, "Real URL for getting LED port:    GET  http://" IPSTR "/api/led_info", 
+        ESP_LOGI(TAG, "Real URL for getting LED ports:   GET  http://" IPSTR "/api/led_info", 
                  IP2STR(&event->ip_info.ip));
-        ESP_LOGI(TAG, "Real URL for changing power:      POST http://" IPSTR "/api/power?value=on", 
+        ESP_LOGI(TAG, "Real URL for changing power:      POST http://" IPSTR "/api/power?ch=0&value=on", 
                  IP2STR(&event->ip_info.ip));
-        ESP_LOGI(TAG, "Real URL for getting power:       GET  http://" IPSTR "/api/power", 
+        ESP_LOGI(TAG, "Real URL for getting power:       GET  http://" IPSTR "/api/power?ch=0", 
                  IP2STR(&event->ip_info.ip));
         s_retry_num = 0;
         xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);

@@ -22,11 +22,41 @@ endmenu
 
 menu "LED Configuration"
 
-    config LEDC_GPIO
-        int "LED GPIO Pin"
+    config LEDC_GPIO_0
+        int "LED GPIO Pin 0 (D0)"
+        default 0
+        help
+            GPIO pin number for LED Channel 0 (D0 is typically GPIO 0).
+
+    config LEDC_GPIO_1
+        int "LED GPIO Pin 1 (D1)"
+        default 1
+        help
+            GPIO pin number for LED Channel 1 (D1 is typically GPIO 1).
+
+    config LEDC_GPIO_2
+        int "LED GPIO Pin 2 (D2)"
         default 2
         help
-            GPIO pin number for the LED output (D2 is typically GPIO 2).
+            GPIO pin number for LED Channel 2 (D2 is typically GPIO 2).
+
+    config LEDC_GPIO_3
+        int "LED GPIO Pin 3 (D3)"
+        default 3
+        help
+            GPIO pin number for LED Channel 3 (D3 is typically GPIO 3).
+
+    config LEDC_GPIO_4
+        int "LED GPIO Pin 4 (D4)"
+        default 4
+        help
+            GPIO pin number for LED Channel 4 (D4 is typically GPIO 4).
+
+    config LEDC_GPIO_5
+        int "LED GPIO Pin 5 (D5)"
+        default 5
+        help
+            GPIO pin number for LED Channel 5 (D5 is typically GPIO 5).
 
     choice LEDC_OUTPUT_MODE
         prompt "GPIO Output Mode"

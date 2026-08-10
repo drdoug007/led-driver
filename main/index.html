@@ -3,11 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ESP32 LED Controller</title>
+    <title>ESP32 6-Channel LED Controller</title>
     <style>
         :root {
             --primary-color: #007bff;
-            --bg-color: #f8f9fa;
+            --bg-color: #f0f2f5;
             --card-bg: #ffffff;
             --text-color: #333;
         }
@@ -15,52 +15,54 @@
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background-color: var(--bg-color);
             color: var(--text-color);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
             margin: 0;
+            padding: 20px;
         }
         .container {
-            background-color: var(--card-bg);
-            padding: 2rem;
-            border-radius: 15px;
-            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
-            width: 100%;
-            max-width: 400px;
-            text-align: center;
+            max-width: 1000px;
+            margin: 0 auto;
         }
-        h1 { margin-bottom: 2rem; font-weight: 300; }
-        .control-group { margin-bottom: 2rem; }
-        label { display: block; margin-bottom: 0.5rem; font-weight: 600; }
+        h1 { text-align: center; font-weight: 300; margin-bottom: 2rem; color: #444; }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+        }
+        .card {
+            background-color: var(--card-bg);
+            padding: 1.5rem;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+            transition: transform 0.2s;
+        }
+        .card:hover { transform: translateY(-2px); }
+        .card h2 { margin-top: 0; font-size: 1.1rem; color: #666; text-transform: uppercase; letter-spacing: 1px; }
+        .control-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
         
-        /* Slider styling */
         .slider {
             -webkit-appearance: none;
             width: 100%;
-            height: 10px;
-            border-radius: 5px;
-            background: #ddd;
+            height: 8px;
+            border-radius: 4px;
+            background: #eee;
             outline: none;
-            margin: 1rem 0;
+            margin: 15px 0;
         }
         .slider::-webkit-slider-thumb {
             -webkit-appearance: none;
-            appearance: none;
-            width: 25px;
-            height: 25px;
+            width: 22px;
+            height: 22px;
             border-radius: 50%;
             background: var(--primary-color);
             cursor: pointer;
-            box-shadow: 0 0 5px rgba(0,0,0,0.2);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
 
-        /* Toggle styling */
         .switch {
             position: relative;
             display: inline-block;
-            width: 60px;
-            height: 34px;
+            width: 50px;
+            height: 26px;
         }
         .switch input { opacity: 0; width: 0; height: 0; }
         .slider-round {
@@ -69,55 +71,89 @@
             top: 0; left: 0; right: 0; bottom: 0;
             background-color: #ccc;
             transition: .4s;
-            border-radius: 34px;
+            border-radius: 26px;
         }
         .slider-round:before {
             position: absolute;
             content: "";
-            height: 26px; width: 26px;
+            height: 18px; width: 18px;
             left: 4px; bottom: 4px;
             background-color: white;
             transition: .4s;
             border-radius: 50%;
         }
         input:checked + .slider-round { background-color: var(--primary-color); }
-        input:checked + .slider-round:before { transform: translateX(26px); }
+        input:checked + .slider-round:before { transform: translateX(24px); }
 
-        .status {
-            margin-top: 1rem;
-            font-size: 0.9rem;
-            color: #666;
+        .status-bar {
+            margin-top: 2.5rem;
+            text-align: center;
+            font-size: 0.85rem;
+            color: #888;
+            padding: 10px;
+            background: #fff;
+            border-radius: 8px;
         }
-        .val-display { font-size: 1.5rem; font-weight: bold; color: var(--primary-color); }
+        .val-display { font-weight: bold; color: var(--primary-color); font-size: 1.2rem; }
+        .label-text { font-size: 0.9rem; color: #777; font-weight: 600; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>LED Control</h1>
-        
-        <div class="control-group">
-            <label>Power</label>
-            <label class="switch">
-                <input type="checkbox" id="power-toggle" checked>
-                <span class="slider-round"></span>
-            </label>
-        </div>
-
-        <div class="control-group">
-            <label>Brightness: <span id="brightness-val" class="val-display">50</span>%</label>
-            <input type="range" min="0" max="100" value="50" class="slider" id="brightness-slider">
-        </div>
-
-        <div class="status" id="status-text">Connecting...</div>
+        <h1>LED Dashboard</h1>
+        <div id="led-grid" class="grid"></div>
+        <div class="status-bar" id="status-text">Connecting to ESP32...</div>
     </div>
 
     <script>
-        const powerToggle = document.getElementById('power-toggle');
-        const brightnessSlider = document.getElementById('brightness-slider');
-        const brightnessVal = document.getElementById('brightness-val');
+        const NUM_CHANNELS = 6;
+        const grid = document.getElementById('led-grid');
         const statusText = document.getElementById('status-text');
 
-        async function updateStatus() {
+        function createCard(ch) {
+            const card = document.createElement('div');
+            card.className = 'card';
+            card.innerHTML = `
+                <h2>Channel ${ch}</h2>
+                <div class="control-row">
+                    <span class="label-text">POWER</span>
+                    <label class="switch">
+                        <input type="checkbox" id="pwr-${ch}">
+                        <span class="slider-round"></span>
+                    </label>
+                </div>
+                <div>
+                    <div style="display:flex; justify-content: space-between; align-items: center">
+                        <span class="label-text">BRIGHTNESS</span>
+                        <span class="val-display"><span id="val-${ch}">--</span>%</span>
+                    </div>
+                    <input type="range" min="0" max="100" value="0" class="slider" id="sld-${ch}">
+                </div>
+            `;
+            grid.appendChild(card);
+
+            const pwr = card.querySelector(`#pwr-${ch}`);
+            const sld = card.querySelector(`#sld-${ch}`);
+            const val = card.querySelector(`#val-${ch}`);
+
+            pwr.onchange = async () => {
+                const state = pwr.checked ? 'on' : 'off';
+                try {
+                    const res = await fetch(`/api/power?ch=${ch}&value=${state}`, { method: 'POST' });
+                    if(res.ok) statusText.textContent = `Channel ${ch} turned ${state}`;
+                } catch (err) { statusText.textContent = 'Connection error'; }
+            };
+
+            sld.oninput = () => { val.textContent = sld.value; };
+            sld.onchange = async () => {
+                try {
+                    const res = await fetch(`/api/brightness?ch=${ch}&value=${sld.value}`, { method: 'POST' });
+                    if(res.ok) statusText.textContent = `Channel ${ch} set to ${sld.value}%`;
+                } catch (err) { statusText.textContent = 'Connection error'; }
+            };
+        }
+
+        async function sync() {
             try {
                 const [bRes, pRes] = await Promise.all([
                     fetch('/api/brightness'),
@@ -126,40 +162,25 @@
                 const bData = await bRes.json();
                 const pData = await pRes.json();
                 
-                brightnessSlider.value = bData.brightness;
-                brightnessVal.textContent = bData.brightness;
-                powerToggle.checked = pData.power === 'on';
-                statusText.textContent = 'Connected';
+                for(let i=0; i<NUM_CHANNELS; i++) {
+                    const sld = document.getElementById(`sld-${i}`);
+                    const val = document.getElementById(`val-${i}`);
+                    const pwr = document.getElementById(`pwr-${i}`);
+                    
+                    if(sld) sld.value = bData.brightness[i];
+                    if(val) val.textContent = bData.brightness[i];
+                    if(pwr) pwr.checked = pData.power[i] === 'on';
+                }
+                statusText.textContent = 'Status: Connected';
             } catch (err) {
-                statusText.textContent = 'Error syncing state';
+                statusText.textContent = 'Status: Offline';
             }
         }
 
-        powerToggle.onchange = async () => {
-            const val = powerToggle.checked ? 'on' : 'off';
-            try {
-                await fetch(`/api/power?value=${val}`, { method: 'POST' });
-                statusText.textContent = `Power: ${val}`;
-            } catch (err) {
-                statusText.textContent = 'Error updating power';
-            }
-        };
-
-        brightnessSlider.oninput = () => {
-            brightnessVal.textContent = brightnessSlider.value;
-        };
-
-        brightnessSlider.onchange = async () => {
-            try {
-                await fetch(`/api/brightness?value=${brightnessSlider.value}`, { method: 'POST' });
-                statusText.textContent = `Brightness: ${brightnessSlider.value}%`;
-            } catch (err) {
-                statusText.textContent = 'Error updating brightness';
-            }
-        };
-
-        // Initial sync
-        updateStatus();
+        for (let i = 0; i < NUM_CHANNELS; i++) createCard(i);
+        sync();
+        // Periodic sync every 5 seconds
+        setInterval(sync, 5000);
     </script>
 </body>
 </html>
